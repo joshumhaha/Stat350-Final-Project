@@ -1,0 +1,156 @@
+---
+title: 'Stat350-Final Project'
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(stats)
+library(factoextra)
+library(car)
+
+# import data 
+
+df1 <- read.csv('Real estate.csv', header = T)
+names(df1)
+
+# create year 
+df1$Year <- floor(df1$X1.transaction.date)
+names(df1)
+table(df1$Year)
+df1$X1.transaction.date <- df1$Year
+names(df1)[2] <- 'Year'
+df1 <- df1[, -9]
+names(df1)
+
+# transform of the response
+df1$Y2 <- sqrt(df1$Y.house.price.of.unit.area)
+
+df2 <- df1 %>% 
+  filter(Year == '2012')
+
+# introduce new data point 
+df1[415, 1] <- 415
+df1[415, 2] <- '2012'
+N <- 414
+for (i in 3: 8){
+  set.seed(i)
+  SRS.index <- sample.int(N, 1, replace = FALSE)
+  df1[415, i] <- df1[SRS.index, i]
+}
+df1[415, ]
+# Potential outlier
+df1[which.max(df1$Y2),]
+
+# Figure 2
+par(mfrow=c(2,2))
+plot(df1$X2.house.age, df1$Y2, col = df1$Year, pch = 16, 
+     main = 'A. house age and house price',
+     xlab = 'house.age', ylab = 'sqrt.house.price.of.unit.area')
+plot(df1$X3.distance.to.the.nearest.MRT.station, df1$Y2, col = df1$Year, pch = 16,
+     main = 'B. distance to MRT and house price',
+     xlab = 'distance.to.MRT', ylab = 'sqrt.house.price.of.unit.area')
+plot(df1$X4.number.of.convenience.stores, df1$Y2, col = df1$Year, pch = 16,
+     main = 'C. number of stores and house price',
+     xlab = 'number.of.convenience.stores', ylab = 'sqrt.house.price.of.unit.area')
+plot(df1$X5.latitude, df1$X6.longitude, col = df1$Year, pch = 16,
+     main = 'D. latitude vs. longitude', 
+     xlab = 'latitude', ylab = 'longitude')
+
+# Figure 1
+par(mfrow=c(1,2))
+hist(df1$Y.house.price.of.unit.area, main = 'A. Original scale')
+hist(df1$Y2, main = 'B. Square-root scale')
+
+hist(df1$X4.number.of.convenience.stores)
+fivenum(df1$X4.number.of.convenience.stores)
+
+#hist(log(df1$Y.house.price.of.unit.area))
+hist(sqrt(df1$Y.house.price.of.unit.area))
+
+# test for normality
+shapiro.test(sqrt(df1$Y.house.price.of.unit.area))
+
+plot(df1$X5.latitude, df1$X6.longitude, col = df1$Year)
+plot(df1$X2.house.age, df1$Y.house.price.of.unit.area)
+
+# Figure 3
+# check multi-colineariry
+pairs(df1[,3:5], col= "blue", pch=18, 
+      main= "Relationship between variables")
+
+# variable selection 
+
+# PCA
+df1$Year <- as.factor(df1$Year)
+df1.pca <- prcomp(df1[,c(4, 6, 7)], center = TRUE,scale. = TRUE)
+summary(df1.pca)
+par(mfrow=c(1,1))
+plot(df1.pca$x[,1:2], col = df1$Year)
+
+# M0: Baseline model 
+#df1$Y2 <- sqrt(df1$Y.house.price.of.unit.area)
+my.lm0 <- lm(Y2 ~ ., data = df1[, -c(1, 8)])
+vif(my.lm0)
+summary(my.lm0)
+par(mfrow = c(2,2))
+plot(my.lm0)
+
+# M1: full model 
+df1$Y2 <- sqrt(df1$Y.house.price.of.unit.area)
+my.lm1 <- lm(Y2 ~ (.)^2, data = df1[, -c(1, 8)])
+#vif(my.lm1)
+summary(my.lm1)
+
+par(mfrow = c(2,2))
+plot(my.lm1)
+
+# M2: stepwise 
+fit.start <- lm(Y2 ~1, data = df1[, -c(1, 8)])
+fit.end <- lm(Y2 ~ (.)^2, data = df1[, -c(1, 8)])
+step.BIC = step(fit.start, list(upper = fit.end), 
+                K = log(nrow(df1[, -c(1, 8)])), trace = 0)
+summary(step.BIC)
+plot(step.BIC)
+
+df1$Y2 <- sqrt(df1$Y.house.price.of.unit.area)
+my.lm1 <- lm(Y2 ~., data = df1[, -c(1, 8)])
+vif(my.lm1)
+summary(my.lm1)
+
+# K-means clutering 
+set.seed(2020)
+km.res <- kmeans(df1[,c(6, 7)], 3, nstart = 25)
+
+fviz_cluster(km.res, data = df1[,c(6, 7)],
+             palette = c("#2E9FDF", "#00AFBB", "#E7B800"), 
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw()
+)
+
+df3 <- cbind(df1, cluster = km.res$cluster)
+head(df3)
+names(df3)
+
+df3$cluster <- as.factor(df3$cluster)
+my.lm2 <- lm(Y2 ~., data = df3[, c(2:5, 9:10)])
+vif(my.lm2)
+summary(my.lm2)
+
+fit.start <- lm(Y2 ~., data = df3[, c(2:5, 9:10)])
+fit.end <- lm(Y2 ~ (.)^2, data = df3[, c(2:5, 9:10)])
+step.BIC2 = step(fit.start, list(upper = fit.end), 
+                K = log(nrow(df1[, -c(1, 8)])), trace = 0)
+summary(step.BIC2)
+plot(step.BIC2)
+
+names(step.BIC2)
+step.BIC2$coefficients
+confint(step.BIC2)
+
+my.ci <- cbind(step.BIC2$coefficients, confint(step.BIC2))
+write.csv(my.ci, 'ci.csv')
+
+```
+
